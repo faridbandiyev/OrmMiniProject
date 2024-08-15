@@ -135,7 +135,9 @@ namespace OrmMiniProject.Services.Implementations
                 row++;
             }
 
-            var filePath = $"C:\\Users\\User\\Desktop\\New folder\\User_{userId}_Orders.xlsx";
+
+            string path = Environment.GetFolderPath(Environment.SpecialFolder.Desktop);
+            var filePath = $"{path}\\New folder\\User_{userId}_Orders.xlsx";
             workbook.SaveAs(filePath);
             Console.WriteLine($"Orders exported to {filePath}");
 
