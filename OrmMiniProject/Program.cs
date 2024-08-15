@@ -22,17 +22,14 @@ namespace OrmMiniProject
     {
         static async Task Main(string[] args)
         {
-            // Initialize the database context
             using var dbContext = new AppDbContext();
 
-            // Initialize repositories
             IProductRepository productRepository = new ProductRepository(dbContext);
             IUserRepository userRepository = new UserRepository(dbContext);
             IOrderRepository orderRepository = new OrderRepository(dbContext);
             IOrderDetailRepository orderDetailRepository = new OrderDetailRepository(dbContext);
             IPaymentRepository paymentRepository = new PaymentRepository(dbContext);
 
-            // Initialize services
             IProductService productService = new ProductService(productRepository);
             IUserService userService = new UserService(userRepository, orderRepository);
             IOrderService orderService = new OrderService(orderRepository, orderDetailRepository, productRepository);
