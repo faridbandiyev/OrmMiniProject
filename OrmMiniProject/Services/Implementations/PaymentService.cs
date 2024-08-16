@@ -26,18 +26,12 @@ namespace OrmMiniProject.Services.Implementations
             _userRepository = userRepository;
         }
 
-        public async Task MakePaymentAsync(CreatePaymentDTO createPaymentDto, string email, string password)
+        public async Task MakePaymentAsync(CreatePaymentDTO createPaymentDto, int userId)
         {
-            var user = await _userRepository.GetSingleAsync(u => u.Email == email && u.Password == password);
-            if (user == null)
-            {
-                throw new UserAuthenticationException("Invalid email or password.");
-            }
-
-            var order = await _orderRepository.GetSingleAsync(o => o.Id == createPaymentDto.OrderId);
+            var order = await _orderRepository.GetSingleAsync(o => o.Id == createPaymentDto.OrderId && o.UserId == userId);
             if (order == null)
             {
-                throw new NotFoundException("Order not found.");
+                throw new NotFoundException("Order not found or does not belong to the user.");
             }
 
             if (createPaymentDto.Amount < order.TotalAmount)
@@ -59,6 +53,18 @@ namespace OrmMiniProject.Services.Implementations
             await _paymentRepository.CreateAsync(payment);
             await _paymentRepository.SaveChangesAsync();
         }
+        public async Task<List<PaymentDTO>> GetPaymentsAsync(int userId)
+        {
+            var payments = await _paymentRepository.GetAllByPredicateAsync(p => p.Order.UserId == userId);
+            return payments.Select(p => new PaymentDTO
+            {
+                Id = p.Id,
+                OrderId = p.OrderId,
+                Amount = p.Amount,
+                PaymentDate = p.PaymentDate
+            }).ToList();
+        }
+
 
         public async Task<List<PaymentDTO>> GetPaymentsAsync()
         {

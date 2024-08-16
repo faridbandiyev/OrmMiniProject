@@ -35,7 +35,7 @@ namespace OrmMiniProject
             IUserService userService = new UserService(userRepository, orderRepository);
             IOrderService orderService = new OrderService(orderRepository, orderDetailRepository, productRepository);
             IPaymentService paymentService = new PaymentService(paymentRepository, orderRepository, userRepository);
-            
+
             bool exit = false;
 
             while (!exit)
@@ -61,7 +61,7 @@ namespace OrmMiniProject
                             }
                             else
                             {
-                                await UserMenuAsync(loggedInUser, orderService, paymentService, productService);
+                                await UserMenuAsync(loggedInUser, orderService, paymentService, productService, userService);
                             }
                         }
                         break;
@@ -156,7 +156,7 @@ namespace OrmMiniProject
             }
         }
 
-        static async Task UserMenuAsync(UserDTO user, IOrderService orderService, IPaymentService paymentService,IProductService productService)
+        static async Task UserMenuAsync(UserDTO user, IOrderService orderService, IPaymentService paymentService, IProductService productService, IUserService userService)
         {
             bool back = false;
 
@@ -172,10 +172,10 @@ namespace OrmMiniProject
                 switch (userChoice)
                 {
                     case "1":
-                        await ManageOrdersAsync(orderService,paymentService,productService, user.Id);
+                        await ManageOrdersAsync(orderService, paymentService, productService, user.Id);
                         break;
                     case "2":
-                        await ManagePaymentsAsync(paymentService, orderService, user.Id);
+                        await ManagePaymentsAsync(paymentService, orderService, userService,user.Id, user);
                         break;
                     case "0":
                         back = true;
@@ -189,11 +189,11 @@ namespace OrmMiniProject
 
         #region Order Management
         static async Task ManageOrdersAsync(
-            IOrderService orderService,
-            IPaymentService paymentService,IProductService productService,
-            int userId)
+    IOrderService orderService,
+    IPaymentService paymentService,
+    IProductService productService,
+    int userId)
         {
-
             bool back = false;
 
             while (!back)
@@ -202,6 +202,7 @@ namespace OrmMiniProject
                 Console.WriteLine("1. Create Order");
                 Console.WriteLine("2. List My Orders");
                 Console.WriteLine("3. Get Order Details");
+                Console.WriteLine("4. Cancel Order");
                 Console.WriteLine("0. Back to User Menu");
                 Console.Write("Select an option: ");
                 string orderChoice = Console.ReadLine();
@@ -219,6 +220,9 @@ namespace OrmMiniProject
                         case "3":
                             await GetOrderDetailsByOrderIdAsync(orderService);
                             break;
+                        case "4":
+                            await CancelOrderAsync(orderService);
+                            break;
                         case "0":
                             back = true;
                             break;
@@ -233,8 +237,21 @@ namespace OrmMiniProject
                 }
             }
         }
+        static async Task CancelOrderAsync(IOrderService orderService)
+        {
+            Console.WriteLine("\n--- Cancel Order ---");
+            Console.Write("Enter Order ID to Cancel: ");
+            if (!int.TryParse(Console.ReadLine(), out int orderId))
+            {
+                Console.WriteLine("Invalid ID format.");
+                return;
+            }
 
-        static async Task CreateOrderAsync(IOrderService orderService, int userId,IProductService productService)
+            await orderService.CancelOrderAsync(orderId);
+            Console.WriteLine("Order canceled successfully!");
+        }
+
+        static async Task CreateOrderAsync(IOrderService orderService, int userId, IProductService productService)
         {
             Console.WriteLine("\n--- Create New Order ---");
             var selectedProducts = new List<CreateOrderDetailDTO>();
@@ -262,6 +279,13 @@ namespace OrmMiniProject
                 if (!int.TryParse(Console.ReadLine(), out int quantity))
                 {
                     Console.WriteLine("Invalid quantity format.");
+                    return;
+                }
+
+                var product = await productService.GetProductByIdAsync(productId);
+                if (quantity > product.Stock)
+                {
+                    Console.WriteLine($"Insufficient stock for {product.Name}. Available stock: {product.Stock}. Order canceled.");
                     return;
                 }
 
@@ -293,7 +317,7 @@ namespace OrmMiniProject
             Console.Write("Do you want to proceed with the order? (y/n): ");
             if (Console.ReadLine()?.ToLower() != "y")
             {
-                Console.WriteLine("Order creation cancelled.");
+                Console.WriteLine("Order creation canceled.");
                 return;
             }
 
@@ -307,7 +331,7 @@ namespace OrmMiniProject
             await orderService.CreateOrderAsync(newOrder);
 
             var createdOrder = await orderService.GetOrdersAsync();
-            var orderId = createdOrder.Last().Id;  
+            var orderId = createdOrder.Last().Id;
 
             foreach (var orderDetail in selectedProducts)
             {
@@ -316,6 +340,7 @@ namespace OrmMiniProject
 
             Console.WriteLine("Order created successfully and is pending payment.");
         }
+
 
         static async Task ListUserOrdersAsync(IOrderService orderService, int userId)
         {
@@ -362,7 +387,7 @@ namespace OrmMiniProject
         #endregion
 
         #region Payment Management
-        static async Task ManagePaymentsAsync(IPaymentService paymentService, IOrderService orderService, int userId)
+        static async Task ManagePaymentsAsync(IPaymentService paymentService, IOrderService orderService, IUserService userService, int userId, UserDTO user)
         {
             bool back = false;
 
@@ -380,7 +405,7 @@ namespace OrmMiniProject
                     switch (paymentChoice)
                     {
                         case "1":
-                            await MakePaymentAsync(paymentService, orderService, userId);
+                            await MakePaymentAsync(paymentService, orderService, user);
                             break;
                         case "2":
                             await ListAllPaymentsAsync(paymentService, userId);
@@ -400,11 +425,11 @@ namespace OrmMiniProject
             }
         }
 
-        static async Task MakePaymentAsync(IPaymentService paymentService, IOrderService orderService, int userId)
+        static async Task MakePaymentAsync(IPaymentService paymentService, IOrderService orderService, UserDTO user)
         {
             Console.WriteLine("\n--- Make Payment ---");
 
-            var orders = await orderService.GetUserOrdersAsync(userId);
+            var orders = await orderService.GetUserOrdersAsync(user.Id);
 
             if (!orders.Any())
             {
@@ -444,7 +469,7 @@ namespace OrmMiniProject
                 Amount = paymentAmount
             };
 
-            await paymentService.MakePaymentAsync(newPayment, orderToPay.User.Email, orderToPay.User.Password);
+            await paymentService.MakePaymentAsync(newPayment, user.Id);
 
             if (paymentAmount >= orderToPay.TotalAmount)
             {
@@ -454,13 +479,14 @@ namespace OrmMiniProject
             else
             {
                 Console.WriteLine("Partial payment made, order remains pending.");
+
             }
         }
 
         static async Task ListAllPaymentsAsync(IPaymentService paymentService, int userId)
         {
             Console.WriteLine("\n--- List of My Payments ---");
-            var payments = await paymentService.GetPaymentsAsync();
+            var payments = await paymentService.GetPaymentsAsync(userId);
 
             if (payments.Any())
             {
@@ -474,6 +500,7 @@ namespace OrmMiniProject
                 Console.WriteLine("No payments available.");
             }
         }
+
         #endregion
 
         #region Product Management
