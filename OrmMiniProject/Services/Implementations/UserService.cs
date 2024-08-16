@@ -24,6 +24,24 @@ namespace OrmMiniProject.Services.Implementations
             _orderRepository = orderRepository;
         }
 
+        public async Task<UserDTO> LoginAsync(string email, string password)
+        {
+            var user = await _userRepository.GetSingleAsync(u => u.Email == email && u.Password == password);
+
+            if (user == null)
+            {
+                throw new UserAuthenticationException("Invalid email or password.");
+            }
+
+            return new UserDTO
+            {
+                Id = user.Id,
+                FullName = user.FullName,
+                Email = user.Email,
+                Address = user.Address
+            };
+        }
+
         public async Task<List<UserDTO>> GetAllUsersAsync()
         {
             var users = await _userRepository.GetAllAsync();
@@ -39,6 +57,7 @@ namespace OrmMiniProject.Services.Implementations
         public async Task RegisterUserAsync(CreateUserDTO userDto)
         {
             var existingEmails = await _userRepository.GetAllEmailsAsync();
+
 
             if (!userDto.FullName.IsValidName())
             {

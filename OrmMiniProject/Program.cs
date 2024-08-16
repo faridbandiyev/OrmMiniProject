@@ -2,6 +2,7 @@
 using System.Collections.Generic;
 using System.Linq;
 using System.Threading.Tasks;
+using DocumentFormat.OpenXml.Spreadsheet;
 using OrmMiniProject.Contexts;
 using OrmMiniProject.DTOs.Order;
 using OrmMiniProject.DTOs.OrderDetailDTO;
@@ -34,16 +35,16 @@ namespace OrmMiniProject
             IUserService userService = new UserService(userRepository, orderRepository);
             IOrderService orderService = new OrderService(orderRepository, orderDetailRepository, productRepository);
             IPaymentService paymentService = new PaymentService(paymentRepository, orderRepository, userRepository);
-
+            
             bool exit = false;
 
             while (!exit)
             {
                 Console.WriteLine("\n=== Mini E-Commerce Console App ===");
-                Console.WriteLine("1. Manage Products");
-                Console.WriteLine("2. Manage Users");
-                Console.WriteLine("3. Manage Orders");
-                Console.WriteLine("4. Manage Payments");
+                Console.WriteLine("1. Login");
+                Console.WriteLine("2. Register");
+                Console.WriteLine("3. Manage Products");
+                Console.WriteLine("4. Manage Users");
                 Console.WriteLine("0. Exit");
                 Console.Write("Select an option: ");
                 string mainChoice = Console.ReadLine();
@@ -51,16 +52,33 @@ namespace OrmMiniProject
                 switch (mainChoice)
                 {
                     case "1":
-                        await ManageProductsAsync(productService);
+                        var loggedInUser = await LoginAsync(userService);
+                        if (loggedInUser != null)
+                        {
+                            if (loggedInUser.Email == "bendiyevf@gmail.com")
+                            {
+                                await AdminMenuAsync(productService, userService);
+                            }
+                            else
+                            {
+                                await UserMenuAsync(loggedInUser, orderService, paymentService, productService);
+                            }
+                        }
                         break;
                     case "2":
-                        await ManageUsersAsync(userService);
+                        await RegisterUserAsync(userService);
                         break;
                     case "3":
-                        await ManageOrdersAsync(orderService, productService, userService);
+                        if (await AdminLoginAsync(userService))
+                        {
+                            await ManageProductsAsync(productService);
+                        }
                         break;
                     case "4":
-                        await ManagePaymentsAsync(paymentService,orderService,userService);
+                        if (await AdminLoginAsync(userService))
+                        {
+                            await ManageUsersAsync(userService);
+                        }
                         break;
                     case "0":
                         exit = true;
@@ -73,24 +91,118 @@ namespace OrmMiniProject
             }
         }
 
+        static async Task<UserDTO> LoginAsync(IUserService userService)
+        {
+            Console.Write("Enter Email: ");
+            string email = Console.ReadLine();
+            Console.Write("Enter Password: ");
+            string password = Console.ReadLine();
+
+            try
+            {
+                var user = await userService.LoginAsync(email, password);
+                if (user != null)
+                {
+                    Console.WriteLine($"Welcome, {user.FullName}!");
+                    return user;
+                }
+                else
+                {
+                    Console.WriteLine("Invalid email or password.");
+                    return null;
+                }
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"Login error: {ex.Message}");
+                return null;
+            }
+        }
+
+        static async Task<bool> AdminLoginAsync(IUserService userService)
+        {
+            var adminUser = await LoginAsync(userService);
+            return adminUser != null && adminUser.Email == "bendiyevf@gmail.com";
+        }
+
+        static async Task AdminMenuAsync(IProductService productService, IUserService userService)
+        {
+            bool back = false;
+
+            while (!back)
+            {
+                Console.WriteLine("\n--- Admin Menu ---");
+                Console.WriteLine("1. Manage Products");
+                Console.WriteLine("2. Manage Users");
+                Console.WriteLine("0. Logout");
+                Console.Write("Select an option: ");
+                string adminChoice = Console.ReadLine();
+
+                switch (adminChoice)
+                {
+                    case "1":
+                        await ManageProductsAsync(productService);
+                        break;
+                    case "2":
+                        await ManageUsersAsync(userService);
+                        break;
+                    case "0":
+                        back = true;
+                        break;
+                    default:
+                        Console.WriteLine("Invalid option. Please try again.");
+                        break;
+                }
+            }
+        }
+
+        static async Task UserMenuAsync(UserDTO user, IOrderService orderService, IPaymentService paymentService,IProductService productService)
+        {
+            bool back = false;
+
+            while (!back)
+            {
+                Console.WriteLine("\n--- User Menu ---");
+                Console.WriteLine("1. Manage Orders");
+                Console.WriteLine("2. Manage Payments");
+                Console.WriteLine("0. Logout");
+                Console.Write("Select an option: ");
+                string userChoice = Console.ReadLine();
+
+                switch (userChoice)
+                {
+                    case "1":
+                        await ManageOrdersAsync(orderService,paymentService,productService, user.Id);
+                        break;
+                    case "2":
+                        await ManagePaymentsAsync(paymentService, orderService, user.Id);
+                        break;
+                    case "0":
+                        back = true;
+                        break;
+                    default:
+                        Console.WriteLine("Invalid option. Please try again.");
+                        break;
+                }
+            }
+        }
+
         #region Order Management
         static async Task ManageOrdersAsync(
-    IOrderService orderService,
-    IProductService productService,
-    IUserService userService)
+            IOrderService orderService,
+            IPaymentService paymentService,IProductService productService,
+            int userId)
         {
+
             bool back = false;
 
             while (!back)
             {
                 Console.WriteLine("\n--- Order Management ---");
                 Console.WriteLine("1. Create Order");
-                Console.WriteLine("2. Cancel Order");
-                Console.WriteLine("3. Complete Order");
-                Console.WriteLine("4. List All Orders");
-                Console.WriteLine("5. Add Order Detail");
-                Console.WriteLine("6. Get Order Details By Order ID");
-                Console.WriteLine("0. Back to Main Menu");
+                Console.WriteLine("2. List My Orders");
+                Console.WriteLine("3. Get Order Details");
+                Console.WriteLine("0. Back to User Menu");
                 Console.Write("Select an option: ");
                 string orderChoice = Console.ReadLine();
 
@@ -99,21 +211,12 @@ namespace OrmMiniProject
                     switch (orderChoice)
                     {
                         case "1":
-                            await CreateOrderAsync(orderService, productService, userService);
+                            await CreateOrderAsync(orderService, userId, productService);
                             break;
                         case "2":
-                            await CancelOrderAsync(orderService);
+                            await ListUserOrdersAsync(orderService, userId);
                             break;
                         case "3":
-                            await CompleteOrderAsync(orderService);
-                            break;
-                        case "4":
-                            await ListAllOrdersAsync(orderService);
-                            break;
-                        case "5":
-                            await AddOrderDetailAsync(orderService, productService);
-                            break;
-                        case "6":
                             await GetOrderDetailsByOrderIdAsync(orderService);
                             break;
                         case "0":
@@ -131,26 +234,12 @@ namespace OrmMiniProject
             }
         }
 
-        static async Task CreateOrderAsync(
-            IOrderService orderService,
-            IProductService productService,
-            IUserService userService)
+        static async Task CreateOrderAsync(IOrderService orderService, int userId,IProductService productService)
         {
             Console.WriteLine("\n--- Create New Order ---");
-
-            // Select User
-            Console.WriteLine("Select User ID:");
-            await ListAllUsersAsync(userService);
-            if (!int.TryParse(Console.ReadLine(), out int userId))
-            {
-                Console.WriteLine("Invalid ID format.");
-                return;
-            }
-
             var selectedProducts = new List<CreateOrderDetailDTO>();
             bool addMoreProducts = true;
 
-            // Select Products
             while (addMoreProducts)
             {
                 Console.WriteLine("Available Products:");
@@ -186,7 +275,6 @@ namespace OrmMiniProject
                 addMoreProducts = Console.ReadLine()?.ToLower() == "y";
             }
 
-            // Calculate total amount based on selected products
             decimal totalAmount = 0;
             foreach (var orderDetail in selectedProducts)
             {
@@ -194,7 +282,6 @@ namespace OrmMiniProject
                 totalAmount += product.Price * orderDetail.Quantity;
             }
 
-            // Display Invoice
             Console.WriteLine("\n--- Invoice ---");
             foreach (var orderDetail in selectedProducts)
             {
@@ -203,7 +290,6 @@ namespace OrmMiniProject
             }
             Console.WriteLine($"Total Amount: {totalAmount:C}");
 
-            // Confirm and Create Order
             Console.Write("Do you want to proceed with the order? (y/n): ");
             if (Console.ReadLine()?.ToLower() != "y")
             {
@@ -221,7 +307,7 @@ namespace OrmMiniProject
             await orderService.CreateOrderAsync(newOrder);
 
             var createdOrder = await orderService.GetOrdersAsync();
-            var orderId = createdOrder.Last().Id;  // Get the ID of the last created order
+            var orderId = createdOrder.Last().Id;  
 
             foreach (var orderDetail in selectedProducts)
             {
@@ -231,93 +317,22 @@ namespace OrmMiniProject
             Console.WriteLine("Order created successfully and is pending payment.");
         }
 
-        static async Task CancelOrderAsync(IOrderService orderService)
+        static async Task ListUserOrdersAsync(IOrderService orderService, int userId)
         {
-            Console.WriteLine("\n--- Cancel Order ---");
-            Console.Write("Enter Order ID to Cancel: ");
-            if (!int.TryParse(Console.ReadLine(), out int orderId))
-            {
-                Console.WriteLine("Invalid ID format.");
-                return;
-            }
-
-            await orderService.CancelOrderAsync(orderId);
-            Console.WriteLine("Order cancelled successfully!");
-        }
-
-        static async Task CompleteOrderAsync(IOrderService orderService)
-        {
-            Console.WriteLine("\n--- Complete Order ---");
-            Console.Write("Enter Order ID to Complete: ");
-            if (!int.TryParse(Console.ReadLine(), out int orderId))
-            {
-                Console.WriteLine("Invalid ID format.");
-                return;
-            }
-
-            await orderService.CompleteOrderAsync(orderId);
-            Console.WriteLine("Order completed successfully!");
-        }
-
-        static async Task ListAllOrdersAsync(IOrderService orderService)
-        {
-            Console.WriteLine("\n--- List of All Orders ---");
-            var orders = await orderService.GetOrdersAsync();
+            Console.WriteLine("\n--- List of My Orders ---");
+            var orders = await orderService.GetUserOrdersAsync(userId);
 
             if (orders.Any())
             {
                 foreach (var order in orders)
                 {
-                    Console.WriteLine($"ID: {order.Id} | User ID: {order.UserId} | Order Date: {order.OrderDate} | Total Amount: {order.TotalAmount:C} | Status: {order.Status}");
+                    Console.WriteLine($"Order ID: {order.Id} | Order Date: {order.OrderDate} | Total Amount: {order.TotalAmount:C} | Status: {order.Status}");
                 }
             }
             else
             {
                 Console.WriteLine("No orders available.");
             }
-        }
-
-        static async Task AddOrderDetailAsync(IOrderService orderService, IProductService productService)
-        {
-            Console.WriteLine("\n--- Add Order Detail ---");
-            Console.Write("Enter Order ID: ");
-            if (!int.TryParse(Console.ReadLine(), out int orderId))
-            {
-                Console.WriteLine("Invalid ID format.");
-                return;
-            }
-
-            Console.WriteLine("Available Products:");
-            var products = await ListAllProductsAsync(productService);
-
-            if (!products.Any())
-            {
-                Console.WriteLine("No products available.");
-                return;
-            }
-
-            Console.Write("Enter Product ID: ");
-            if (!int.TryParse(Console.ReadLine(), out int productId))
-            {
-                Console.WriteLine("Invalid ID format.");
-                return;
-            }
-
-            Console.Write("Enter Quantity: ");
-            if (!int.TryParse(Console.ReadLine(), out int quantity))
-            {
-                Console.WriteLine("Invalid quantity format.");
-                return;
-            }
-
-            var newOrderDetail = new CreateOrderDetailDTO
-            {
-                ProductId = productId,
-                Quantity = quantity
-            };
-
-            await orderService.AddOrderDetailAsync(orderId, newOrderDetail);
-            Console.WriteLine("Order detail added successfully!");
         }
 
         static async Task GetOrderDetailsByOrderIdAsync(IOrderService orderService)
@@ -344,7 +359,122 @@ namespace OrmMiniProject
                 Console.WriteLine("No order details found for this order.");
             }
         }
-#endregion
+        #endregion
+
+        #region Payment Management
+        static async Task ManagePaymentsAsync(IPaymentService paymentService, IOrderService orderService, int userId)
+        {
+            bool back = false;
+
+            while (!back)
+            {
+                Console.WriteLine("\n--- Payment Management ---");
+                Console.WriteLine("1. Make Payment");
+                Console.WriteLine("2. List My Payments");
+                Console.WriteLine("0. Back to User Menu");
+                Console.Write("Select an option: ");
+                string paymentChoice = Console.ReadLine();
+
+                try
+                {
+                    switch (paymentChoice)
+                    {
+                        case "1":
+                            await MakePaymentAsync(paymentService, orderService, userId);
+                            break;
+                        case "2":
+                            await ListAllPaymentsAsync(paymentService, userId);
+                            break;
+                        case "0":
+                            back = true;
+                            break;
+                        default:
+                            Console.WriteLine("Invalid option. Please try again.");
+                            break;
+                    }
+                }
+                catch (Exception ex)
+                {
+                    Console.WriteLine($"Error: {ex.Message}");
+                }
+            }
+        }
+
+        static async Task MakePaymentAsync(IPaymentService paymentService, IOrderService orderService, int userId)
+        {
+            Console.WriteLine("\n--- Make Payment ---");
+
+            var orders = await orderService.GetUserOrdersAsync(userId);
+
+            if (!orders.Any())
+            {
+                Console.WriteLine("No orders found for this user.");
+                return;
+            }
+
+            Console.WriteLine("Select Order ID to Pay:");
+            foreach (var order in orders.Where(o => o.Status == OrderStatus.Pending))
+            {
+                Console.WriteLine($"Order ID: {order.Id} | Total Amount: {order.TotalAmount:C} | Status: {order.Status}");
+            }
+
+            if (!int.TryParse(Console.ReadLine(), out int orderId))
+            {
+                Console.WriteLine("Invalid ID format.");
+                return;
+            }
+
+            var orderToPay = orders.FirstOrDefault(o => o.Id == orderId);
+            if (orderToPay == null)
+            {
+                Console.WriteLine("Order not found.");
+                return;
+            }
+
+            Console.Write($"Enter Payment Amount (Total: {orderToPay.TotalAmount:C}): ");
+            if (!decimal.TryParse(Console.ReadLine(), out decimal paymentAmount))
+            {
+                Console.WriteLine("Invalid amount format.");
+                return;
+            }
+
+            var newPayment = new CreatePaymentDTO
+            {
+                OrderId = orderToPay.Id,
+                Amount = paymentAmount
+            };
+
+            await paymentService.MakePaymentAsync(newPayment, orderToPay.User.Email, orderToPay.User.Password);
+
+            if (paymentAmount >= orderToPay.TotalAmount)
+            {
+                await orderService.CompleteOrderAsync(orderToPay.Id);
+                Console.WriteLine("Payment successful, order completed.");
+            }
+            else
+            {
+                Console.WriteLine("Partial payment made, order remains pending.");
+            }
+        }
+
+        static async Task ListAllPaymentsAsync(IPaymentService paymentService, int userId)
+        {
+            Console.WriteLine("\n--- List of My Payments ---");
+            var payments = await paymentService.GetPaymentsAsync();
+
+            if (payments.Any())
+            {
+                foreach (var payment in payments)
+                {
+                    Console.WriteLine($"ID: {payment.Id} | Order ID: {payment.OrderId} | Amount: {payment.Amount:C} | Payment Date: {payment.PaymentDate}");
+                }
+            }
+            else
+            {
+                Console.WriteLine("No payments available.");
+            }
+        }
+        #endregion
 
         #region Product Management
         static async Task ManageProductsAsync(IProductService productService)
@@ -360,7 +490,7 @@ namespace OrmMiniProject
                 Console.WriteLine("4. List All Products");
                 Console.WriteLine("5. Search Products");
                 Console.WriteLine("6. Get Product By ID");
-                Console.WriteLine("0. Back to Main Menu");
+                Console.WriteLine("0. Back to Admin Menu");
                 Console.Write("Select an option: ");
                 string productChoice = Console.ReadLine();
 
@@ -560,7 +690,8 @@ namespace OrmMiniProject
                 Console.WriteLine("3. Get User By ID");
                 Console.WriteLine("4. Get User Orders");
                 Console.WriteLine("5. Export User Orders to Excel");
-                Console.WriteLine("0. Back to Main Menu");
+                Console.WriteLine("6. List All Users");  // New option added
+                Console.WriteLine("0. Back to Admin Menu");
                 Console.Write("Select an option: ");
                 string userChoice = Console.ReadLine();
 
@@ -582,6 +713,9 @@ namespace OrmMiniProject
                             break;
                         case "5":
                             await ExportUserOrdersToExcelAsync(userService);
+                            break;
+                        case "6":
+                            await ListAllUsersAsync(userService);
                             break;
                         case "0":
                             back = true;
@@ -621,9 +755,21 @@ namespace OrmMiniProject
                 Address = address
             };
 
-            await userService.RegisterUserAsync(newUser);
-            Console.WriteLine("User registered successfully!");
+            try
+            {
+                await userService.RegisterUserAsync(newUser);
+                Console.WriteLine("User registered successfully!");
+            }
+            catch (UserAlreadyExistsException ex)
+            {
+                Console.WriteLine($"Registration failed: {ex.Message}");
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"An unexpected error occurred: {ex.Message}");
+            }
         }
+
 
         static async Task UpdateUserInfoAsync(IUserService userService)
         {
@@ -709,141 +855,25 @@ namespace OrmMiniProject
         }
         #endregion
 
-        #region Payment Management
-        static async Task ManagePaymentsAsync(IPaymentService paymentService, IOrderService orderService, IUserService userService)
-        {
-            bool back = false;
-
-            while (!back)
-            {
-                Console.WriteLine("\n--- Payment Management ---");
-                Console.WriteLine("1. Make Payment");
-                Console.WriteLine("2. List All Payments");
-                Console.WriteLine("0. Back to Main Menu");
-                Console.Write("Select an option: ");
-                string paymentChoice = Console.ReadLine();
-
-                try
-                {
-                    switch (paymentChoice)
-                    {
-                        case "1":
-                            await MakePaymentAsync(paymentService, orderService, userService);
-                            break;
-                        case "2":
-                            await ListAllPaymentsAsync(paymentService);
-                            break;
-                        case "0":
-                            back = true;
-                            break;
-                        default:
-                            Console.WriteLine("Invalid option. Please try again.");
-                            break;
-                    }
-                }
-                catch (Exception ex)
-                {
-                    Console.WriteLine($"Error: {ex.Message}");
-                }
-            }
-        }
-
-        static async Task MakePaymentAsync(IPaymentService paymentService, IOrderService orderService, IUserService userService)
-        {
-            Console.WriteLine("\n--- Make Payment ---");
-
-            Console.WriteLine("Select User ID:");
-            var users = await ListAllUsersAsync(userService);
-            if (!users.Any())
-            {
-                Console.WriteLine("No users available.");
-                return;
-            }
-
-            if (!int.TryParse(Console.ReadLine(), out int userId))
-            {
-                Console.WriteLine("Invalid ID format.");
-                return;
-            }
-
-            var orders = await orderService.GetUserOrdersAsync(userId);
-
-            if (!orders.Any())
-            {
-                Console.WriteLine("No orders found for this user.");
-                return;
-            }
-
-            Console.WriteLine("Select Order ID to Pay:");
-            foreach (var order in orders.Where(o => o.Status == OrderStatus.Pending))
-            {
-                Console.WriteLine($"Order ID: {order.Id} | Total Amount: {order.TotalAmount:C} | Status: {order.Status}");
-            }
-
-            if (!int.TryParse(Console.ReadLine(), out int orderId))
-            {
-                Console.WriteLine("Invalid ID format.");
-                return;
-            }
-
-            var orderToPay = orders.FirstOrDefault(o => o.Id == orderId);
-            if (orderToPay == null)
-            {
-                Console.WriteLine("Order not found.");
-                return;
-            }
-
-            Console.Write("Enter Email: ");
-            string email = Console.ReadLine();
-            Console.Write("Enter Password: ");
-            string password = Console.ReadLine();
-
-            Console.Write($"Enter Payment Amount (Total: {orderToPay.TotalAmount:C}): ");
-            if (!decimal.TryParse(Console.ReadLine(), out decimal paymentAmount))
-            {
-                Console.WriteLine("Invalid amount format.");
-                return;
-            }
-
-            var newPayment = new CreatePaymentDTO
-            {
-                OrderId = orderToPay.Id,
-                Amount = paymentAmount
-            };
-
-            await paymentService.MakePaymentAsync(newPayment, email, password);
-
-            if (paymentAmount >= orderToPay.TotalAmount)
-            {
-                await orderService.CompleteOrderAsync(orderToPay.Id);
-                Console.WriteLine("Payment successful, order completed.");
-            }
-            else
-            {
-                Console.WriteLine("Partial payment made, order remains pending.");
-            }
-        }
-
-        static async Task ListAllPaymentsAsync(IPaymentService paymentService)
-        {
-            Console.WriteLine("\n--- List of All Payments ---");
-            var payments = await paymentService.GetPaymentsAsync();
-
-            if (payments.Any())
-            {
-                foreach (var payment in payments)
-                {
-                    Console.WriteLine($"ID: {payment.Id} | Order ID: {payment.OrderId} | Amount: {payment.Amount:C} | Payment Date: {payment.PaymentDate}");
-                }
-            }
-            else
-            {
-                Console.WriteLine("No payments available.");
-            }
-        }
-        #endregion
-
         #region
+        static async Task<List<ProductDTO>> ListAllProductsAsync(IProductService productService)
+        {
+            var products = await productService.GetProductsAsync();
+
+            if (!products.Any())
+            {
+                Console.WriteLine("No products available.");
+                return products;
+            }
+
+            foreach (var product in products)
+            {
+                Console.WriteLine($"ID: {product.Id} | Name: {product.Name} | Price: {product.Price:C} | Stock: {product.Stock}");
+            }
+
+            return products;
+        }
+
         static async Task<List<UserDTO>> ListAllUsersAsync(IUserService userService)
         {
             var users = await userService.GetAllUsersAsync();
@@ -862,23 +892,7 @@ namespace OrmMiniProject
             return users;
         }
 
-        static async Task<List<ProductDTO>> ListAllProductsAsync(IProductService productService)
-        {
-            var products = await productService.GetProductsAsync();
-
-            if (!products.Any())
-            {
-                Console.WriteLine("No products available.");
-                return products;
-            }
-
-            foreach (var product in products)
-            {
-                Console.WriteLine($"ID: {product.Id} | Name: {product.Name} | Price: {product.Price:C} | Stock: {product.Stock}");
-            }
-
-            return products;
-        }
         #endregion
+
     }
 }

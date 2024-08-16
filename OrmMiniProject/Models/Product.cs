@@ -16,5 +16,14 @@ namespace OrmMiniProject.Models
         public DateTime CreatedDate { get; set; }
         public DateTime? UpdatedDate { get; set; }
         public List<OrderDetail> OrderDetails { get; set; } = new List<OrderDetail>();
+
+        public void ReduceStock(int quantity)
+        {
+            if (Stock < quantity)
+            {
+                throw new InvalidOperationException("Insufficient stock for this product.");
+            }
+            Stock -= quantity;
+        }
     }
 }

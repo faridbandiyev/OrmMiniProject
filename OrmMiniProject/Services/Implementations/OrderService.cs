@@ -61,6 +61,16 @@ namespace OrmMiniProject.Services.Implementations
                 throw new OrderAlreadyCancelledException("Order has already been cancelled!");
             }
 
+            foreach (var detail in order.OrderDetails)
+            {
+                var product = await _productRepository.GetSingleAsync(p => p.Id == detail.ProductId);
+                if (product != null)
+                {
+                    product.Stock += detail.Quantity;
+                    _productRepository.Update(product);
+                }
+            }
+
             order.Status = OrderStatus.Cancelled;
             _orderRepository.Update(order);
             await _orderRepository.SaveChangesAsync();
@@ -157,5 +167,4 @@ namespace OrmMiniProject.Services.Implementations
             }).ToList();
         }
     }
-
 }

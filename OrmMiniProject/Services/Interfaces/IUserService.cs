@@ -10,6 +10,7 @@ namespace OrmMiniProject.Services.Interfaces
 {
     public interface IUserService
     {
+        Task<UserDTO> LoginAsync(string email, string password);
         Task RegisterUserAsync(CreateUserDTO userDto);
         Task<UserDTO> GetUserByIdAsync(int id);
         Task UpdateUserInfoAsync(UpdateUserDTO userDto);
