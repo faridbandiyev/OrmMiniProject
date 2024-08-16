@@ -100,21 +100,15 @@ namespace OrmMiniProject.Services.Implementations
 
         public async Task AddOrderDetailAsync(int orderId, CreateOrderDetailDTO createOrderDetailDTO)
         {
-            var order = await _orderRepository.GetSingleAsync(o => o.Id == orderId);
-            if (order == null)
-            {
-                throw new NotFoundException("Order not found!");
-            }
-
-            if (createOrderDetailDTO.Quantity <= 0)
-            {
-                throw new InvalidOrderDetailException("Order detail quantity must be greater than zero!");
-            }
-
             var product = await _productRepository.GetSingleAsync(p => p.Id == createOrderDetailDTO.ProductId);
             if (product == null)
             {
-                throw new NotFoundException("Product not found!");
+                throw new NotFoundException("Product not found.");
+            }
+
+            if (createOrderDetailDTO.Quantity > product.Stock)
+            {
+                throw new InvalidOrderDetailException("Cannot order more than available stock.");
             }
 
             var orderDetail = new OrderDetail
@@ -125,6 +119,8 @@ namespace OrmMiniProject.Services.Implementations
                 PricePerItem = product.Price
             };
 
+            product.Stock -= createOrderDetailDTO.Quantity;
+            _productRepository.Update(product);
             await _orderDetailRepository.CreateAsync(orderDetail);
             await _orderDetailRepository.SaveChangesAsync();
         }
@@ -145,6 +141,19 @@ namespace OrmMiniProject.Services.Implementations
                 ProductId = od.ProductId,
                 Quantity = od.Quantity,
                 PricePerItem = od.PricePerItem
+            }).ToList();
+        }
+
+        public async Task<List<OrderDTO>> GetUserOrdersAsync(int userId)
+        {
+            var orders = await _orderRepository.GetAllByPredicateAsync(o => o.UserId == userId);
+            return orders.Select(o => new OrderDTO
+            {
+                Id = o.Id,
+                UserId = o.UserId,
+                OrderDate = o.OrderDate,
+                TotalAmount = o.TotalAmount,
+                Status = o.Status
             }).ToList();
         }
     }

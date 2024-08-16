@@ -13,7 +13,8 @@ namespace OrmMiniProject.Services.Interfaces
         Task RegisterUserAsync(CreateUserDTO userDto);
         Task<UserDTO> GetUserByIdAsync(int id);
         Task UpdateUserInfoAsync(UpdateUserDTO userDto);
-        Task ExportUserOrdersToExcelAsync(int userId);
         Task<List<OrderDTO>> GetUserOrdersAsync(int userId);
+        Task ExportUserOrdersToExcelAsync(int userId);
+        Task<List<UserDTO>> GetAllUsersAsync();
     }
 }

@@ -33,7 +33,7 @@ namespace OrmMiniProject
             IProductService productService = new ProductService(productRepository);
             IUserService userService = new UserService(userRepository, orderRepository);
             IOrderService orderService = new OrderService(orderRepository, orderDetailRepository, productRepository);
-            IPaymentService paymentService = new PaymentService(paymentRepository, orderRepository);
+            IPaymentService paymentService = new PaymentService(paymentRepository, orderRepository, userRepository);
 
             bool exit = false;
 
@@ -57,10 +57,10 @@ namespace OrmMiniProject
                         await ManageUsersAsync(userService);
                         break;
                     case "3":
-                        await ManageOrdersAsync(orderService);
+                        await ManageOrdersAsync(orderService, productService, userService);
                         break;
                     case "4":
-                        await ManagePaymentsAsync(paymentService);
+                        await ManagePaymentsAsync(paymentService,orderService,userService);
                         break;
                     case "0":
                         exit = true;
@@ -72,6 +72,279 @@ namespace OrmMiniProject
                 }
             }
         }
+
+        #region Order Management
+        static async Task ManageOrdersAsync(
+    IOrderService orderService,
+    IProductService productService,
+    IUserService userService)
+        {
+            bool back = false;
+
+            while (!back)
+            {
+                Console.WriteLine("\n--- Order Management ---");
+                Console.WriteLine("1. Create Order");
+                Console.WriteLine("2. Cancel Order");
+                Console.WriteLine("3. Complete Order");
+                Console.WriteLine("4. List All Orders");
+                Console.WriteLine("5. Add Order Detail");
+                Console.WriteLine("6. Get Order Details By Order ID");
+                Console.WriteLine("0. Back to Main Menu");
+                Console.Write("Select an option: ");
+                string orderChoice = Console.ReadLine();
+
+                try
+                {
+                    switch (orderChoice)
+                    {
+                        case "1":
+                            await CreateOrderAsync(orderService, productService, userService);
+                            break;
+                        case "2":
+                            await CancelOrderAsync(orderService);
+                            break;
+                        case "3":
+                            await CompleteOrderAsync(orderService);
+                            break;
+                        case "4":
+                            await ListAllOrdersAsync(orderService);
+                            break;
+                        case "5":
+                            await AddOrderDetailAsync(orderService, productService);
+                            break;
+                        case "6":
+                            await GetOrderDetailsByOrderIdAsync(orderService);
+                            break;
+                        case "0":
+                            back = true;
+                            break;
+                        default:
+                            Console.WriteLine("Invalid option. Please try again.");
+                            break;
+                    }
+                }
+                catch (Exception ex)
+                {
+                    Console.WriteLine($"Error: {ex.Message}");
+                }
+            }
+        }
+
+        static async Task CreateOrderAsync(
+            IOrderService orderService,
+            IProductService productService,
+            IUserService userService)
+        {
+            Console.WriteLine("\n--- Create New Order ---");
+
+            // Select User
+            Console.WriteLine("Select User ID:");
+            await ListAllUsersAsync(userService);
+            if (!int.TryParse(Console.ReadLine(), out int userId))
+            {
+                Console.WriteLine("Invalid ID format.");
+                return;
+            }
+
+            var selectedProducts = new List<CreateOrderDetailDTO>();
+            bool addMoreProducts = true;
+
+            // Select Products
+            while (addMoreProducts)
+            {
+                Console.WriteLine("Available Products:");
+                var products = await ListAllProductsAsync(productService);
+
+                if (!products.Any())
+                {
+                    Console.WriteLine("No products available to order.");
+                    return;
+                }
+
+                Console.Write("Enter Product ID to Add to Order: ");
+                if (!int.TryParse(Console.ReadLine(), out int productId))
+                {
+                    Console.WriteLine("Invalid ID format.");
+                    return;
+                }
+
+                Console.Write("Enter Quantity: ");
+                if (!int.TryParse(Console.ReadLine(), out int quantity))
+                {
+                    Console.WriteLine("Invalid quantity format.");
+                    return;
+                }
+
+                selectedProducts.Add(new CreateOrderDetailDTO
+                {
+                    ProductId = productId,
+                    Quantity = quantity
+                });
+
+                Console.Write("Do you want to add another product? (y/n): ");
+                addMoreProducts = Console.ReadLine()?.ToLower() == "y";
+            }
+
+            // Calculate total amount based on selected products
+            decimal totalAmount = 0;
+            foreach (var orderDetail in selectedProducts)
+            {
+                var product = await productService.GetProductByIdAsync(orderDetail.ProductId);
+                totalAmount += product.Price * orderDetail.Quantity;
+            }
+
+            // Display Invoice
+            Console.WriteLine("\n--- Invoice ---");
+            foreach (var orderDetail in selectedProducts)
+            {
+                var product = await productService.GetProductByIdAsync(orderDetail.ProductId);
+                Console.WriteLine($"Product: {product.Name} | Quantity: {orderDetail.Quantity} | Price Per Item: {product.Price:C} | Subtotal: {product.Price * orderDetail.Quantity:C}");
+            }
+            Console.WriteLine($"Total Amount: {totalAmount:C}");
+
+            // Confirm and Create Order
+            Console.Write("Do you want to proceed with the order? (y/n): ");
+            if (Console.ReadLine()?.ToLower() != "y")
+            {
+                Console.WriteLine("Order creation cancelled.");
+                return;
+            }
+
+            var newOrder = new CreateOrderDTO
+            {
+                UserId = userId,
+                TotalAmount = totalAmount,
+                Status = OrderStatus.Pending
+            };
+
+            await orderService.CreateOrderAsync(newOrder);
+
+            var createdOrder = await orderService.GetOrdersAsync();
+            var orderId = createdOrder.Last().Id;  // Get the ID of the last created order
+
+            foreach (var orderDetail in selectedProducts)
+            {
+                await orderService.AddOrderDetailAsync(orderId, orderDetail);
+            }
+
+            Console.WriteLine("Order created successfully and is pending payment.");
+        }
+
+        static async Task CancelOrderAsync(IOrderService orderService)
+        {
+            Console.WriteLine("\n--- Cancel Order ---");
+            Console.Write("Enter Order ID to Cancel: ");
+            if (!int.TryParse(Console.ReadLine(), out int orderId))
+            {
+                Console.WriteLine("Invalid ID format.");
+                return;
+            }
+
+            await orderService.CancelOrderAsync(orderId);
+            Console.WriteLine("Order cancelled successfully!");
+        }
+
+        static async Task CompleteOrderAsync(IOrderService orderService)
+        {
+            Console.WriteLine("\n--- Complete Order ---");
+            Console.Write("Enter Order ID to Complete: ");
+            if (!int.TryParse(Console.ReadLine(), out int orderId))
+            {
+                Console.WriteLine("Invalid ID format.");
+                return;
+            }
+
+            await orderService.CompleteOrderAsync(orderId);
+            Console.WriteLine("Order completed successfully!");
+        }
+
+        static async Task ListAllOrdersAsync(IOrderService orderService)
+        {
+            Console.WriteLine("\n--- List of All Orders ---");
+            var orders = await orderService.GetOrdersAsync();
+
+            if (orders.Any())
+            {
+                foreach (var order in orders)
+                {
+                    Console.WriteLine($"ID: {order.Id} | User ID: {order.UserId} | Order Date: {order.OrderDate} | Total Amount: {order.TotalAmount:C} | Status: {order.Status}");
+                }
+            }
+            else
+            {
+                Console.WriteLine("No orders available.");
+            }
+        }
+
+        static async Task AddOrderDetailAsync(IOrderService orderService, IProductService productService)
+        {
+            Console.WriteLine("\n--- Add Order Detail ---");
+            Console.Write("Enter Order ID: ");
+            if (!int.TryParse(Console.ReadLine(), out int orderId))
+            {
+                Console.WriteLine("Invalid ID format.");
+                return;
+            }
+
+            Console.WriteLine("Available Products:");
+            var products = await ListAllProductsAsync(productService);
+
+            if (!products.Any())
+            {
+                Console.WriteLine("No products available.");
+                return;
+            }
+
+            Console.Write("Enter Product ID: ");
+            if (!int.TryParse(Console.ReadLine(), out int productId))
+            {
+                Console.WriteLine("Invalid ID format.");
+                return;
+            }
+
+            Console.Write("Enter Quantity: ");
+            if (!int.TryParse(Console.ReadLine(), out int quantity))
+            {
+                Console.WriteLine("Invalid quantity format.");
+                return;
+            }
+
+            var newOrderDetail = new CreateOrderDetailDTO
+            {
+                ProductId = productId,
+                Quantity = quantity
+            };
+
+            await orderService.AddOrderDetailAsync(orderId, newOrderDetail);
+            Console.WriteLine("Order detail added successfully!");
+        }
+
+        static async Task GetOrderDetailsByOrderIdAsync(IOrderService orderService)
+        {
+            Console.WriteLine("\n--- Get Order Details By Order ID ---");
+            Console.Write("Enter Order ID: ");
+            if (!int.TryParse(Console.ReadLine(), out int orderId))
+            {
+                Console.WriteLine("Invalid ID format.");
+                return;
+            }
+
+            var orderDetails = await orderService.GetOrderDetailsByOrderIdAsync(orderId);
+
+            if (orderDetails.Any())
+            {
+                foreach (var detail in orderDetails)
+                {
+                    Console.WriteLine($"ID: {detail.Id} | Order ID: {detail.OrderId} | Product ID: {detail.ProductId} | Quantity: {detail.Quantity} | Price Per Item: {detail.PricePerItem:C}");
+                }
+            }
+            else
+            {
+                Console.WriteLine("No order details found for this order.");
+            }
+        }
+#endregion
 
         #region Product Management
         static async Task ManageProductsAsync(IProductService productService)
@@ -238,24 +511,6 @@ namespace OrmMiniProject
             Console.WriteLine("Product deleted successfully!");
         }
 
-        static async Task ListAllProductsAsync(IProductService productService)
-        {
-            Console.WriteLine("\n--- List of All Products ---");
-            var products = await productService.GetProductsAsync();
-
-            if (products.Any())
-            {
-                foreach (var product in products)
-                {
-                    Console.WriteLine($"ID: {product.Id} | Name: {product.Name} | Price: {product.Price} | Stock: {product.Stock} | Description: {product.Description}");
-                }
-            }
-            else
-            {
-                Console.WriteLine("No products available.");
-            }
-        }
-
         static async Task SearchProductsAsync(IProductService productService)
         {
             Console.WriteLine("\n--- Search Products ---");
@@ -268,7 +523,7 @@ namespace OrmMiniProject
             {
                 foreach (var product in products)
                 {
-                    Console.WriteLine($"ID: {product.Id} | Name: {product.Name} | Price: {product.Price} | Stock: {product.Stock} | Description: {product.Description}");
+                    Console.WriteLine($"ID: {product.Id} | Name: {product.Name} | Price: {product.Price:C} | Stock: {product.Stock} | Description: {product.Description}");
                 }
             }
             else
@@ -288,7 +543,7 @@ namespace OrmMiniProject
             }
 
             var product = await productService.GetProductByIdAsync(id);
-            Console.WriteLine($"ID: {product.Id} | Name: {product.Name} | Price: {product.Price} | Stock: {product.Stock} | Description: {product.Description}");
+            Console.WriteLine($"ID: {product.Id} | Name: {product.Name} | Price: {product.Price:C} | Stock: {product.Stock} | Description: {product.Description}");
         }
         #endregion
 
@@ -454,197 +709,8 @@ namespace OrmMiniProject
         }
         #endregion
 
-        #region Order Management
-        static async Task ManageOrdersAsync(IOrderService orderService)
-        {
-            bool back = false;
-
-            while (!back)
-            {
-                Console.WriteLine("\n--- Order Management ---");
-                Console.WriteLine("1. Create Order");
-                Console.WriteLine("2. Cancel Order");
-                Console.WriteLine("3. Complete Order");
-                Console.WriteLine("4. List All Orders");
-                Console.WriteLine("5. Add Order Detail");
-                Console.WriteLine("6. Get Order Details By Order ID");
-                Console.WriteLine("0. Back to Main Menu");
-                Console.Write("Select an option: ");
-                string orderChoice = Console.ReadLine();
-
-                try
-                {
-                    switch (orderChoice)
-                    {
-                        case "1":
-                            await CreateOrderAsync(orderService);
-                            break;
-                        case "2":
-                            await CancelOrderAsync(orderService);
-                            break;
-                        case "3":
-                            await CompleteOrderAsync(orderService);
-                            break;
-                        case "4":
-                            await ListAllOrdersAsync(orderService);
-                            break;
-                        case "5":
-                            await AddOrderDetailAsync(orderService);
-                            break;
-                        case "6":
-                            await GetOrderDetailsByOrderIdAsync(orderService);
-                            break;
-                        case "0":
-                            back = true;
-                            break;
-                        default:
-                            Console.WriteLine("Invalid option. Please try again.");
-                            break;
-                    }
-                }
-                catch (Exception ex)
-                {
-                    Console.WriteLine($"Error: {ex.Message}");
-                }
-            }
-        }
-
-        static async Task CreateOrderAsync(IOrderService orderService)
-        {
-            Console.WriteLine("\n--- Create New Order ---");
-            Console.Write("Enter User ID: ");
-            if (!int.TryParse(Console.ReadLine(), out int userId))
-            {
-                Console.WriteLine("Invalid ID format.");
-                return;
-            }
-
-            Console.Write("Enter Total Amount: ");
-            if (!decimal.TryParse(Console.ReadLine(), out decimal totalAmount))
-            {
-                Console.WriteLine("Invalid amount format.");
-                return;
-            }
-
-            var newOrder = new CreateOrderDTO
-            {
-                UserId = userId,
-                TotalAmount = totalAmount,
-                Status = OrderStatus.Pending
-            };
-
-            await orderService.CreateOrderAsync(newOrder);
-            Console.WriteLine("Order created successfully!");
-        }
-
-        static async Task CancelOrderAsync(IOrderService orderService)
-        {
-            Console.WriteLine("\n--- Cancel Order ---");
-            Console.Write("Enter Order ID to Cancel: ");
-            if (!int.TryParse(Console.ReadLine(), out int orderId))
-            {
-                Console.WriteLine("Invalid ID format.");
-                return;
-            }
-
-            await orderService.CancelOrderAsync(orderId);
-            Console.WriteLine("Order cancelled successfully!");
-        }
-
-        static async Task CompleteOrderAsync(IOrderService orderService)
-        {
-            Console.WriteLine("\n--- Complete Order ---");
-            Console.Write("Enter Order ID to Complete: ");
-            if (!int.TryParse(Console.ReadLine(), out int orderId))
-            {
-                Console.WriteLine("Invalid ID format.");
-                return;
-            }
-
-            await orderService.CompleteOrderAsync(orderId);
-            Console.WriteLine("Order completed successfully!");
-        }
-
-        static async Task ListAllOrdersAsync(IOrderService orderService)
-        {
-            Console.WriteLine("\n--- List of All Orders ---");
-            var orders = await orderService.GetOrdersAsync();
-
-            if (orders.Any())
-            {
-                foreach (var order in orders)
-                {
-                    Console.WriteLine($"ID: {order.Id} | User ID: {order.UserId} | Order Date: {order.OrderDate} | Total Amount: {order.TotalAmount} | Status: {order.Status}");
-                }
-            }
-            else
-            {
-                Console.WriteLine("No orders available.");
-            }
-        }
-
-        static async Task AddOrderDetailAsync(IOrderService orderService)
-        {
-            Console.WriteLine("\n--- Add Order Detail ---");
-            Console.Write("Enter Order ID: ");
-            if (!int.TryParse(Console.ReadLine(), out int orderId))
-            {
-                Console.WriteLine("Invalid ID format.");
-                return;
-            }
-
-            Console.Write("Enter Product ID: ");
-            if (!int.TryParse(Console.ReadLine(), out int productId))
-            {
-                Console.WriteLine("Invalid ID format.");
-                return;
-            }
-
-            Console.Write("Enter Quantity: ");
-            if (!int.TryParse(Console.ReadLine(), out int quantity))
-            {
-                Console.WriteLine("Invalid quantity format.");
-                return;
-            }
-
-            var newOrderDetail = new CreateOrderDetailDTO
-            {
-                ProductId = productId,
-                Quantity = quantity
-            };
-
-            await orderService.AddOrderDetailAsync(orderId, newOrderDetail);
-            Console.WriteLine("Order detail added successfully!");
-        }
-
-        static async Task GetOrderDetailsByOrderIdAsync(IOrderService orderService)
-        {
-            Console.WriteLine("\n--- Get Order Details By Order ID ---");
-            Console.Write("Enter Order ID: ");
-            if (!int.TryParse(Console.ReadLine(), out int orderId))
-            {
-                Console.WriteLine("Invalid ID format.");
-                return;
-            }
-
-            var orderDetails = await orderService.GetOrderDetailsByOrderIdAsync(orderId);
-
-            if (orderDetails.Any())
-            {
-                foreach (var detail in orderDetails)
-                {
-                    Console.WriteLine($"ID: {detail.Id} | Order ID: {detail.OrderId} | Product ID: {detail.ProductId} | Quantity: {detail.Quantity} | Price Per Item: {detail.PricePerItem}");
-                }
-            }
-            else
-            {
-                Console.WriteLine("No order details found for this order.");
-            }
-        }
-        #endregion
-
         #region Payment Management
-        static async Task ManagePaymentsAsync(IPaymentService paymentService)
+        static async Task ManagePaymentsAsync(IPaymentService paymentService, IOrderService orderService, IUserService userService)
         {
             bool back = false;
 
@@ -662,7 +728,7 @@ namespace OrmMiniProject
                     switch (paymentChoice)
                     {
                         case "1":
-                            await MakePaymentAsync(paymentService);
+                            await MakePaymentAsync(paymentService, orderService, userService);
                             break;
                         case "2":
                             await ListAllPaymentsAsync(paymentService);
@@ -682,18 +748,58 @@ namespace OrmMiniProject
             }
         }
 
-        static async Task MakePaymentAsync(IPaymentService paymentService)
+        static async Task MakePaymentAsync(IPaymentService paymentService, IOrderService orderService, IUserService userService)
         {
             Console.WriteLine("\n--- Make Payment ---");
-            Console.Write("Enter Order ID: ");
+
+            Console.WriteLine("Select User ID:");
+            var users = await ListAllUsersAsync(userService);
+            if (!users.Any())
+            {
+                Console.WriteLine("No users available.");
+                return;
+            }
+
+            if (!int.TryParse(Console.ReadLine(), out int userId))
+            {
+                Console.WriteLine("Invalid ID format.");
+                return;
+            }
+
+            var orders = await orderService.GetUserOrdersAsync(userId);
+
+            if (!orders.Any())
+            {
+                Console.WriteLine("No orders found for this user.");
+                return;
+            }
+
+            Console.WriteLine("Select Order ID to Pay:");
+            foreach (var order in orders.Where(o => o.Status == OrderStatus.Pending))
+            {
+                Console.WriteLine($"Order ID: {order.Id} | Total Amount: {order.TotalAmount:C} | Status: {order.Status}");
+            }
+
             if (!int.TryParse(Console.ReadLine(), out int orderId))
             {
                 Console.WriteLine("Invalid ID format.");
                 return;
             }
 
-            Console.Write("Enter Amount: ");
-            if (!decimal.TryParse(Console.ReadLine(), out decimal amount))
+            var orderToPay = orders.FirstOrDefault(o => o.Id == orderId);
+            if (orderToPay == null)
+            {
+                Console.WriteLine("Order not found.");
+                return;
+            }
+
+            Console.Write("Enter Email: ");
+            string email = Console.ReadLine();
+            Console.Write("Enter Password: ");
+            string password = Console.ReadLine();
+
+            Console.Write($"Enter Payment Amount (Total: {orderToPay.TotalAmount:C}): ");
+            if (!decimal.TryParse(Console.ReadLine(), out decimal paymentAmount))
             {
                 Console.WriteLine("Invalid amount format.");
                 return;
@@ -701,12 +807,21 @@ namespace OrmMiniProject
 
             var newPayment = new CreatePaymentDTO
             {
-                OrderId = orderId,
-                Amount = amount
+                OrderId = orderToPay.Id,
+                Amount = paymentAmount
             };
 
-            await paymentService.MakePaymentAsync(newPayment);
-            Console.WriteLine("Payment made successfully!");
+            await paymentService.MakePaymentAsync(newPayment, email, password);
+
+            if (paymentAmount >= orderToPay.TotalAmount)
+            {
+                await orderService.CompleteOrderAsync(orderToPay.Id);
+                Console.WriteLine("Payment successful, order completed.");
+            }
+            else
+            {
+                Console.WriteLine("Partial payment made, order remains pending.");
+            }
         }
 
         static async Task ListAllPaymentsAsync(IPaymentService paymentService)
@@ -718,13 +833,51 @@ namespace OrmMiniProject
             {
                 foreach (var payment in payments)
                 {
-                    Console.WriteLine($"ID: {payment.Id} | Order ID: {payment.OrderId} | Amount: {payment.Amount} | Payment Date: {payment.PaymentDate}");
+                    Console.WriteLine($"ID: {payment.Id} | Order ID: {payment.OrderId} | Amount: {payment.Amount:C} | Payment Date: {payment.PaymentDate}");
                 }
             }
             else
             {
                 Console.WriteLine("No payments available.");
             }
+        }
+        #endregion
+
+        #region
+        static async Task<List<UserDTO>> ListAllUsersAsync(IUserService userService)
+        {
+            var users = await userService.GetAllUsersAsync();
+
+            if (!users.Any())
+            {
+                Console.WriteLine("No users available.");
+                return users;
+            }
+
+            foreach (var user in users)
+            {
+                Console.WriteLine($"ID: {user.Id} | Full Name: {user.FullName} | Email: {user.Email}");
+            }
+
+            return users;
+        }
+
+        static async Task<List<ProductDTO>> ListAllProductsAsync(IProductService productService)
+        {
+            var products = await productService.GetProductsAsync();
+
+            if (!products.Any())
+            {
+                Console.WriteLine("No products available.");
+                return products;
+            }
+
+            foreach (var product in products)
+            {
+                Console.WriteLine($"ID: {product.Id} | Name: {product.Name} | Price: {product.Price:C} | Stock: {product.Stock}");
+            }
+
+            return products;
         }
         #endregion
     }

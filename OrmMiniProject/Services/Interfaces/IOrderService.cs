@@ -16,5 +16,6 @@ namespace OrmMiniProject.Services.Interfaces
         Task<List<OrderDTO>> GetOrdersAsync();
         Task AddOrderDetailAsync(int orderId, CreateOrderDetailDTO createOrderDetailDTO);
         Task<List<OrderDetailDTO>> GetOrderDetailsByOrderIdAsync(int orderId);
+        Task<List<OrderDTO>> GetUserOrdersAsync(int userId);
     }
 }

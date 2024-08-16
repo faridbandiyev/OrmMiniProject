@@ -9,7 +9,7 @@ namespace OrmMiniProject.Services.Interfaces
 {
     public interface IPaymentService
     {
-        Task MakePaymentAsync(CreatePaymentDTO createPaymentDto);
+        Task MakePaymentAsync(CreatePaymentDTO createPaymentDto, string email, string password);
         Task<List<PaymentDTO>> GetPaymentsAsync();
     }
 }

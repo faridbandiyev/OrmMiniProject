@@ -5,10 +5,10 @@ using OrmMiniProject.Exceptions;
 using OrmMiniProject.Models;
 using OrmMiniProject.Repositories.Interfaces;
 using OrmMiniProject.Services.Interfaces;
+using OrmMiniProject.Utils;
 using System;
 using System.Collections.Generic;
 using System.Linq;
-using System.Text;
 using System.Threading.Tasks;
 
 namespace OrmMiniProject.Services.Implementations
@@ -22,14 +22,32 @@ namespace OrmMiniProject.Services.Implementations
         {
             _userRepository = userRepository;
             _orderRepository = orderRepository;
-            
+        }
+
+        public async Task<List<UserDTO>> GetAllUsersAsync()
+        {
+            var users = await _userRepository.GetAllAsync();
+            return users.Select(u => new UserDTO
+            {
+                Id = u.Id,
+                FullName = u.FullName,
+                Email = u.Email,
+                Address = u.Address
+            }).ToList();
         }
 
         public async Task RegisterUserAsync(CreateUserDTO userDto)
         {
-            if (string.IsNullOrWhiteSpace(userDto.FullName) || string.IsNullOrWhiteSpace(userDto.Email) || string.IsNullOrWhiteSpace(userDto.Password))
+            var existingEmails = await _userRepository.GetAllEmailsAsync();
+
+            if (!userDto.FullName.IsValidName())
             {
-                throw new InvalidUserInformationException("User registration information is incomplete.");
+                throw new InvalidUserInformationException("User name cannot contain digits.");
+            }
+
+            if (!userDto.Email.IsValidEmail(existingEmails))
+            {
+                throw new InvalidUserInformationException("Email address is already in use.");
             }
 
             var user = new User
@@ -112,20 +130,29 @@ namespace OrmMiniProject.Services.Implementations
             return userOrders;
         }
 
-
         public async Task ExportUserOrdersToExcelAsync(int userId)
         {
+            var user = await GetUserByIdAsync(userId);
             var orders = await GetUserOrdersAsync(userId);
 
             using var workbook = new XLWorkbook();
             var worksheet = workbook.Worksheets.Add("Orders");
 
-            worksheet.Cell(1, 1).Value = "Order ID";
-            worksheet.Cell(1, 2).Value = "Order Date";
-            worksheet.Cell(1, 3).Value = "Total Amount";
-            worksheet.Cell(1, 4).Value = "Status";
+            worksheet.Cell(1, 1).Value = "User Details";
+            worksheet.Cell(2, 1).Value = "Full Name:";
+            worksheet.Cell(2, 2).Value = user.FullName;
+            worksheet.Cell(3, 1).Value = "Email:";
+            worksheet.Cell(3, 2).Value = user.Email;
+            worksheet.Cell(4, 1).Value = "Address:";
+            worksheet.Cell(4, 2).Value = user.Address;
 
-            int row = 2;
+            int startRow = 6;
+            worksheet.Cell(startRow, 1).Value = "Order ID";
+            worksheet.Cell(startRow, 2).Value = "Order Date";
+            worksheet.Cell(startRow, 3).Value = "Total Amount";
+            worksheet.Cell(startRow, 4).Value = "Status";
+
+            int row = startRow + 1;
             foreach (var order in orders)
             {
                 worksheet.Cell(row, 1).Value = order.Id;
@@ -135,15 +162,10 @@ namespace OrmMiniProject.Services.Implementations
                 row++;
             }
 
-
             string path = Environment.GetFolderPath(Environment.SpecialFolder.Desktop);
-            var filePath = $"{path}\\New folder\\User_{userId}_Orders.xlsx";
+            var filePath = $"{path}\\User_{userId}_Orders.xlsx";
             workbook.SaveAs(filePath);
             Console.WriteLine($"Orders exported to {filePath}");
-
         }
-
-
-
     }
 }

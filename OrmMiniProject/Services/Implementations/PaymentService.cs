@@ -1,6 +1,8 @@
 ﻿using OrmMiniProject.DTOs.Payment;
+using OrmMiniProject.Enums;
 using OrmMiniProject.Exceptions;
 using OrmMiniProject.Models;
+using OrmMiniProject.Repositories.Implementations;
 using OrmMiniProject.Repositories.Interfaces;
 using OrmMiniProject.Services.Interfaces;
 using System;
@@ -15,25 +17,36 @@ namespace OrmMiniProject.Services.Implementations
     {
         private readonly IPaymentRepository _paymentRepository;
         private readonly IOrderRepository _orderRepository;
+        private readonly IUserRepository _userRepository;
 
-        public PaymentService(IPaymentRepository paymentRepository, IOrderRepository orderRepository)
+        public PaymentService(IPaymentRepository paymentRepository, IOrderRepository orderRepository, IUserRepository userRepository)
         {
             _paymentRepository = paymentRepository;
             _orderRepository = orderRepository;
+            _userRepository = userRepository;
         }
 
-        public async Task MakePaymentAsync(CreatePaymentDTO createPaymentDto)
+        public async Task MakePaymentAsync(CreatePaymentDTO createPaymentDto, string email, string password)
         {
-            if (createPaymentDto.Amount <= 0)
+            var user = await _userRepository.GetSingleAsync(u => u.Email == email && u.Password == password);
+            if (user == null)
             {
-                throw new InvalidPaymentException("Payment amount must be greater than zero!");
+                throw new UserAuthenticationException("Invalid email or password.");
             }
 
             var order = await _orderRepository.GetSingleAsync(o => o.Id == createPaymentDto.OrderId);
-
             if (order == null)
             {
-                throw new NotFoundException("Order not found!");
+                throw new NotFoundException("Order not found.");
+            }
+
+            if (createPaymentDto.Amount < order.TotalAmount)
+            {
+                order.Status = OrderStatus.Pending;
+            }
+            else
+            {
+                order.Status = OrderStatus.Completed;
             }
 
             var payment = new Payment
